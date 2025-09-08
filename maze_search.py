@@ -1,5 +1,4 @@
-# aprogram to solve a maze problem using a breadth search algorithm
-#while representing the Grid a a 2D list 
+#A program to solve a maze problem using a breadth search algorithm while representing the Grid a a 2D list 
 # we shall use the breadth first search in finding the shortest path in terms of steps because it explores layer by layer.
 #We'll use Python's collections.deque as an efficient queue.
 
@@ -10,8 +9,9 @@ def solveMaze(maze,start,goal):
     maze (list of lists): The maze grid where 0 is a path and 1 is a wall.
     start (tuple): The starting coordinates (row, col).
     goal (tuple): The goal coordinates (row, col).
+    
     """
-    rows, cols = len(maze), len(maze[0])
+    rows, cols = len(maze), len(maze[0]) # this line finds out(and defines ) the boundaries of the maze to make sure our program does not stray outside it  
 
     # The queue will store tuples of (path)
     queue = deque([[start]])
