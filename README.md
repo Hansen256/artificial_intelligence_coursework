@@ -153,7 +153,7 @@ artificial_intelligence_coursework/
 
 ### Author
 
-Tumusiime Hansen Andrew 2023-B291-10756
+Tumusiime Hansen Andrew 
 
 ### Course Context
 
