@@ -81,41 +81,48 @@ def analyze_review_lengths(data):
     """Phase 1: Analyze review lengths by sentiment"""
     print("\n=== Phase 1: EDA - Review Length Analysis ===")
     
-    # Calculate word counts
-    data['word_count'] = data['review'].apply(lambda x: len(str(x).split()) if pd.notna(x) else 0)
+    # Calculate word counts, handling NaN values
+    data['word_count'] = data['review'].apply(
+        lambda x: len(str(x).split()) if pd.notna(x) else 0
+    )
     
     # Basic statistics
-    print(f"Average review length: {data['word_count'].mean():.2f} words")
-    print(f"Median review length: {data['word_count'].median():.2f} words")
+    avg_length = data['word_count'].mean()
+    median_length = data['word_count'].median()
+    print(f"Average review length: {avg_length:.2f} words")
+    print(f"Median review length: {median_length:.2f} words")
     
     # Statistics by sentiment
     sentiment_stats = data.groupby('sentiment')['word_count'].agg(['mean', 'median', 'std'])
     print("\nReview length statistics by sentiment:")
     print(sentiment_stats)
     
-    # Create histogram
-    plt.figure(figsize=(12, 6))
-    
-    plt.subplot(1, 2, 1)
-    positive_lengths = data[data['sentiment'] == 'positive']['word_count']
-    negative_lengths = data[data['sentiment'] == 'negative']['word_count']
-    
-    plt.hist([positive_lengths, negative_lengths], bins=50, alpha=0.7, 
-             label=['Positive', 'Negative'], color=['green', 'red'])
-    plt.xlabel('Review Length (words)')
-    plt.ylabel('Frequency')
-    plt.title('Distribution of Review Lengths by Sentiment')
-    plt.legend()
-    
-    # Box plot
-    plt.subplot(1, 2, 2)
-    data.boxplot(column='word_count', by='sentiment', ax=plt.gca())
-    plt.title('Review Length Box Plot by Sentiment')
-    plt.suptitle('')  # Remove default title
-    
-    plt.tight_layout()
-    plt.savefig('review_length_analysis.png', dpi=300, bbox_inches='tight')
-    plt.close()
+    try:
+        # Create histogram
+        plt.figure(figsize=(12, 6))
+        
+        plt.subplot(1, 2, 1)
+        positive_lengths = data[data['sentiment'] == 'positive']['word_count']
+        negative_lengths = data[data['sentiment'] == 'negative']['word_count']
+        
+        plt.hist([positive_lengths, negative_lengths], bins=min(20, len(data)//2), alpha=0.7, 
+                 label=['Positive', 'Negative'], color=['green', 'red'])
+        plt.xlabel('Review Length (words)')
+        plt.ylabel('Frequency')
+        plt.title('Distribution of Review Lengths by Sentiment')
+        plt.legend()
+        
+        # Box plot
+        plt.subplot(1, 2, 2)
+        data.boxplot(column='word_count', by='sentiment', ax=plt.gca())
+        plt.title('Review Length Box Plot by Sentiment')
+        plt.suptitle('')  # Remove default title
+        
+        plt.tight_layout()
+        plt.savefig('review_length_analysis.png', dpi=300, bbox_inches='tight')
+        plt.close()
+    except Exception as e:
+        print(f"Warning: Could not create review length plots: {e}")
     
     return data
 
@@ -205,7 +212,9 @@ def dimensionality_reduction_visualization(data, sample_size=5000):
     
     # Apply t-SNE
     print("Applying t-SNE...")
-    tsne = TSNE(n_components=2, random_state=42, perplexity=30)
+    # Adjust perplexity based on sample size (must be less than n_samples)
+    perplexity = min(30, max(1, len(sample_data) - 1))
+    tsne = TSNE(n_components=2, random_state=42, perplexity=perplexity)
     X_tsne = tsne.fit_transform(X.toarray())
     
     # Create visualizations
@@ -341,21 +350,36 @@ def train_and_evaluate_models(data, custom_features):
     X_custom = data[custom_features].fillna(0)
     y = (data['sentiment'] == 'positive').astype(int)
     
+    # Check if we have enough data
+    if len(data) < 4:
+        print("Warning: Dataset too small for reliable train/test split. Using minimal split.")
+        test_size = 0.3
+    else:
+        test_size = 0.2
+    
     # Split data
     X_text_train, X_text_test, X_custom_train, X_custom_test, y_train, y_test = train_test_split(
-        X_text, X_custom, y, test_size=0.2, random_state=42, stratify=y
+        X_text, X_custom, y, test_size=test_size, random_state=42, stratify=y
     )
     
     # Create TF-IDF features
     print("Creating TF-IDF features...")
-    tfidf = TfidfVectorizer(max_features=10000, stop_words='english', ngram_range=(1, 2))
+    max_features = min(1000, len(' '.join(X_text_train).split()))  # Adjust based on vocabulary
+    tfidf = TfidfVectorizer(max_features=max_features, stop_words='english', ngram_range=(1, 2))
     X_tfidf_train = tfidf.fit_transform(X_text_train)
     X_tfidf_test = tfidf.transform(X_text_test)
     
     # Combine TF-IDF and custom features
     from scipy.sparse import hstack
-    X_combined_train = hstack([X_tfidf_train, X_custom_train.values])
-    X_combined_test = hstack([X_tfidf_test, X_custom_test.values])
+    from sklearn.preprocessing import MinMaxScaler
+    
+    # Scale custom features to be non-negative for MultinomialNB
+    scaler = MinMaxScaler()
+    X_custom_train_scaled = scaler.fit_transform(X_custom_train)
+    X_custom_test_scaled = scaler.transform(X_custom_test)
+    
+    X_combined_train = hstack([X_tfidf_train, X_custom_train_scaled])
+    X_combined_test = hstack([X_tfidf_test, X_custom_test_scaled])
     
     # Train individual models
     models = {
@@ -368,51 +392,61 @@ def train_and_evaluate_models(data, custom_features):
     
     print("\nTraining individual models...")
     for name, model in models.items():
-        print(f"Training {name}...")
-        model.fit(X_combined_train, y_train)
-        y_pred = model.predict(X_combined_test)
-        y_pred_proba = model.predict_proba(X_combined_test)[:, 1]
-        
-        results[name] = {
-            'accuracy': accuracy_score(y_test, y_pred),
-            'precision': precision_score(y_test, y_pred),
-            'recall': recall_score(y_test, y_pred),
-            'f1': f1_score(y_test, y_pred),
-            'roc_auc': roc_auc_score(y_test, y_pred_proba),
-            'y_pred': y_pred,
-            'y_pred_proba': y_pred_proba
-        }
+        try:
+            print(f"Training {name}...")
+            model.fit(X_combined_train, y_train)
+            y_pred = model.predict(X_combined_test)
+            y_pred_proba = model.predict_proba(X_combined_test)[:, 1]
+            
+            results[name] = {
+                'accuracy': accuracy_score(y_test, y_pred),
+                'precision': precision_score(y_test, y_pred, zero_division=0),
+                'recall': recall_score(y_test, y_pred, zero_division=0),
+                'f1': f1_score(y_test, y_pred, zero_division=0),
+                'roc_auc': roc_auc_score(y_test, y_pred_proba),
+                'y_pred': y_pred,
+                'y_pred_proba': y_pred_proba
+            }
+        except Exception as e:
+            print(f"Error training {name}: {e}")
+            continue
     
     # Train ensemble model
-    print("Training ensemble model...")
-    ensemble = VotingClassifier(
-        estimators=[
-            ('nb', MultinomialNB()),
-            ('lr', LogisticRegression(random_state=42, max_iter=1000)),
-            ('svm', SVC(kernel='linear', probability=True, random_state=42))
-        ],
-        voting='soft'
-    )
-    
-    ensemble.fit(X_combined_train, y_train)
-    y_pred_ensemble = ensemble.predict(X_combined_test)
-    y_pred_proba_ensemble = ensemble.predict_proba(X_combined_test)[:, 1]
-    
-    results['Ensemble'] = {
-        'accuracy': accuracy_score(y_test, y_pred_ensemble),
-        'precision': precision_score(y_test, y_pred_ensemble),
-        'recall': recall_score(y_test, y_pred_ensemble),
-        'f1': f1_score(y_test, y_pred_ensemble),
-        'roc_auc': roc_auc_score(y_test, y_pred_proba_ensemble),
-        'y_pred': y_pred_ensemble,
-        'y_pred_proba': y_pred_proba_ensemble
-    }
+    try:
+        print("Training ensemble model...")
+        ensemble = VotingClassifier(
+            estimators=[
+                ('nb', MultinomialNB()),
+                ('lr', LogisticRegression(random_state=42, max_iter=1000)),
+                ('svm', SVC(kernel='linear', probability=True, random_state=42))
+            ],
+            voting='soft'
+        )
+        
+        ensemble.fit(X_combined_train, y_train)
+        y_pred_ensemble = ensemble.predict(X_combined_test)
+        y_pred_proba_ensemble = ensemble.predict_proba(X_combined_test)[:, 1]
+        
+        results['Ensemble'] = {
+            'accuracy': accuracy_score(y_test, y_pred_ensemble),
+            'precision': precision_score(y_test, y_pred_ensemble, zero_division=0),
+            'recall': recall_score(y_test, y_pred_ensemble, zero_division=0),
+            'f1': f1_score(y_test, y_pred_ensemble, zero_division=0),
+            'roc_auc': roc_auc_score(y_test, y_pred_proba_ensemble),
+            'y_pred': y_pred_ensemble,
+            'y_pred_proba': y_pred_proba_ensemble
+        }
+    except Exception as e:
+        print(f"Error training ensemble model: {e}")
     
     # Print results
-    print("\n=== Model Performance Comparison ===")
-    results_df = pd.DataFrame({name: {metric: scores[metric] for metric in ['accuracy', 'precision', 'recall', 'f1', 'roc_auc']} 
-                              for name, scores in results.items()}).T
-    print(results_df.round(4))
+    if results:
+        print("\n=== Model Performance Comparison ===")
+        results_df = pd.DataFrame({name: {metric: scores[metric] for metric in ['accuracy', 'precision', 'recall', 'f1', 'roc_auc']} 
+                                  for name, scores in results.items()}).T
+        print(results_df.round(4))
+    else:
+        print("No models were successfully trained.")
     
     return results, y_test, X_combined_test, tfidf
 
