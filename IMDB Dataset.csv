@@ -1,0 +1,11 @@
+review,sentiment
+"This movie was absolutely fantastic! Great acting and amazing plot.",positive
+"I loved every minute of this film. Brilliant cinematography and soundtrack.",positive
+"What a wonderful story with excellent character development.",positive
+"Outstanding performance by the lead actor. Highly recommended!",positive
+"This film exceeded all my expectations. A masterpiece!",positive
+"Terrible movie. Waste of time and money.",negative
+"Boring plot and poor acting. Wouldn't recommend to anyone.",negative
+"One of the worst films I've ever seen. Completely disappointing.",negative
+"Awful screenplay and terrible direction. Skip this one.",negative
+"Poorly executed with no redeeming qualities whatsoever.",negative
